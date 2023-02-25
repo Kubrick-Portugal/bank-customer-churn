@@ -35,6 +35,7 @@ File containing saving account transactions for select customers.
 This file contains 4977972 rows × 7 columns.
 
 - **Customers_tm1_e.csv file:**  
+File containing customer data.
 
 | Variable | Definition |
 | ------------- | ------------- |
