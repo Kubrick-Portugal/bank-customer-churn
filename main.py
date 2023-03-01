@@ -43,10 +43,10 @@ df = df[(df.state != '-999') & (df.state != 'UNK') & (df.state != 'Australia')]
 # -----------------------------------------------------------------------------
 
 # Calculate absolute z-score of start balance
-z_scores = np.abs(customers['start_balance'] - np.mean(customers['start_balance'])) / np.std(customers['start_balance'])
+z_scores = np.abs(df['start_balance'] - np.mean(df['start_balance'])) / np.std(df['start_balance'])
 
 # Filter out rows with z-scores > 3
-customers = customers[z_scores < 3]
+df = df[z_scores < 3]
 
 # %% --------------------------------------------------------------------------
 # Adding features 
@@ -226,6 +226,35 @@ customer_means = customer_month_data.groupby('customer_id')['total_withdrawal'].
 customer_stds = customer_month_data.groupby('customer_id')['total_withdrawal'].std()
 customer_month_data['normalized_significant_withdrawals'] = customer_month_data.apply(lambda x: (x['total_withdrawal'] - customer_means[x['customer_id']]) / customer_stds[x['customer_id']], axis=1)
 
+
+# %% --------------------------------------------------------------------------
+# 
+# -----------------------------------------------------------------------------
+# create a new column with NaN values to store the number of days since last deposit
+customer_month_data['days_since_last_deposit'] = np.nan
+
+# group the data by customer and sort by date
+grouped = customer_month_data.groupby('customer_id').apply(lambda x: x.sort_values('date'))
+
+for cust, data in grouped.groupby('customer_id'):
+    # find the index of the last row where total_deposit > 0
+    last_deposit_idx = data[data['total_deposit'] > 0].index[-1]
+    
+    # iterate through each row for that customer, starting from the first row,
+    # and calculate the number of days since the last deposit
+    days_since_last_deposit = 0
+    for idx, row in data.iterrows():
+        if idx > last_deposit_idx:
+            break
+        if row['total_deposit'] > 0:
+            last_deposit_idx = idx
+            days_since_last_deposit = 0
+        else:
+            days_since_last_deposit += (row['date'] - data.loc[last_deposit_idx, 'date']).days
+        
+        # store the calculated value in the 'days_since_last_deposit' column
+        customer_month_data.at[idx, 'days_since_last_deposit'] = days_since_last_deposit
+
 # %% --------------------------------------------------------------------------
 # Add features that include prior month data
 # -----------------------------------------------------------------------------
@@ -236,10 +265,10 @@ window_size = 3
 customer_month_data['rolling_total_amount']=(customer_month_data.groupby('customer_id')['total_amount'].rolling(window_size, min_periods=1).sum()).reset_index()['total_amount'].fillna(0)
 
 # calculate the balance variance
-customer_month_data['balance_variance'] = customer_month_data['current_balance'].rolling(window_size).var()
+customer_month_data['balance_variance'] = customer_month_data.groupby('customer_id')['current_balance'].rolling(window_size).var()
 
-# calculate consecutive months with net deficit for each customer
-customer_month_data['consecutive_deficits'] = customer_month_data.groupby('customer_id')['total_amount'].apply(lambda x: x.rolling(min_periods=1, window=len(x)).apply(lambda y: sum(y < 0) if sum(y < 0) > 0 else 0, raw=True))
+# customer 
+customer_month_data['consecutive_deficits'] = customer_month_data.groupby('customer_id')['total_amount'].apply(lambda x: x.rolling(min_periods=1, window=len(x)).apply(lambda y: sum(y < 0) if sum(y < 0) == len(y) else 0, raw=True))
 
 # %% --------------------------------------------------------------------------
 # Add the churn values
