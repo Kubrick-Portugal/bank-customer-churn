@@ -137,7 +137,7 @@ def load_data(file_path, column_names):
 # Load the Interest Rates
 interest_rates = load_data("data/INTDSRUSM193N.csv", {"DATE": "date", "INTDSRUSM193N": "interest_rate"})
 # Load the GDP Rates
-# gdp = load_data("data/GDPC1.csv", {"DATE": "date", "GDPC1": "gdp"})
+gdp = load_data("data/GDPC1.csv", {"DATE": "date", "GDPC1": "gdp"})
 # Load the Inflation data
 inflation = load_data("data/MICH.csv", {"DATE": "date", "MICH": "inflation_expectation"})
 # Load the Unemployment data
@@ -152,7 +152,7 @@ df['month_year'] = pd.to_datetime(df['month_year'])
 
 # Map new dfs to df based on the month_year column
 df['interest_rate'] = df['month_year'].map(interest_rates['interest_rate'])
-# df['gdp'] = df['month_year'].map(gdp['gdp'])
+df['gdp'] = df['month_year'].map(gdp['gdp'].resample('M').ffill())
 df['inflation_expectation'] = df['month_year'].map(inflation['inflation_expectation'])
 df['unemployment_rate'] = df['month_year'].map(unemployment['unemployment_rate'])
 df['consumer_sent'] = df['month_year'].map(consumer_sent['consumer_sent'])
@@ -238,42 +238,6 @@ customer_month_data['rolling_total_amount']=(customer_month_data.groupby('custom
 # calculate the balance variance
 customer_month_data['balance_variance'] = customer_month_data['current_balance'].rolling(window_size).var()
 
-# %% --------------------------------------------------------------------------
-
-# -----------------------------------------------------------------------------
-
-# # Calculate time since last deposit for each customer-month
-# df['days_since_last_deposit'] = df.groupby('customer_id')['date'].diff().dt.days.fillna(0)
-
-# # Calculate time since last deposit for each customer-month
-# df['days_since_last_withdrawal'] = df.groupby('customer_id')['date'].diff().dt.days.fillna(0)
-
-# %% --------------------------------------------------------------------------
-# 
-# -----------------------------------------------------------------------------
-# # Create a column for days since last deposit for each customer-month
-# customer_month_data['days_since_last_deposit'] = customer_month_data.groupby('customer_id')['date'].diff().dt.days
-# customer_month_data.loc[df['total_deposit'] > 0, 'days_since_last_deposit'] = 0
-
-# # Forward-fill missing values for days since last deposit
-# df['days_since_last_deposit'] = df.groupby('customer_id')['days_since_last_deposit'].fillna(method='ffill')
-
-# # Create a column for the number of months since the first transaction for each customer
-# df['months_since_first_transaction'] = (df['date'] - df.groupby('customer_id')['date'].transform('min')) / np.timedelta64(1, 'M')
-# df['months_since_first_transaction'] = df['months_since_first_transaction'].round().astype(int)
-
-# %% --------------------------------------------------------------------------
-# 
-# -----------------------------------------------------------------------------
-
-# Calculate the rolling mean of significant withdrawals for each customer
-df['significant_withdrawal_mean'] = df.groupby('customer_id')['significant_withdrawal'].rolling(window=3, min_periods=1).mean().reset_index(drop=True)
-
-
-# %% --------------------------------------------------------------------------
-# 
-# -----------------------------------------------------------------------------
-
 # calculate consecutive months with net deficit for each customer
 customer_month_data['consecutive_deficits'] = customer_month_data.groupby('customer_id')['total_amount'].apply(lambda x: x.rolling(min_periods=1, window=len(x)).apply(lambda y: sum(y < 0) if sum(y < 0) > 0 else 0, raw=True))
 
@@ -289,9 +253,11 @@ customer_month_data['churned'] = customer_month_data.groupby('customer_id')['dat
 customer_month_data = customer_month_data[customer_month_data['date'] < '2020-03-01']
 
 # %% --------------------------------------------------------------------------
-# Clean the final dataset
+# Clean the final dataset 
 # -----------------------------------------------------------------------------
 
+# remove the columns we do not need for the ML model
+# we remove here so we don't mess with the previous dataset incase we want to make changes
 final_customer_month_data = customer_month_data.dropna()
 final_customer_month_data = customer_month_data.drop(columns = ['dob','state','creation_date', 'date', 'customer_id'])
 
