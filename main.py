@@ -232,45 +232,45 @@ customer_month_data['normalized_significant_withdrawals'] = customer_month_data.
 # %% --------------------------------------------------------------------------
 # 
 # -----------------------------------------------------------------------------
-# create a new column with NaN values to store the number of days since last deposit
-customer_month_data['days_since_last_deposit'] = np.nan
+# # create a new column with NaN values to store the number of days since last deposit
+# customer_month_data['days_since_last_deposit'] = np.nan
 
-# group the data by customer and sort by date
-grouped = customer_month_data.groupby('customer_id').apply(lambda x: x.sort_values('date'))
+# # group the data by customer and sort by date
+# grouped = customer_month_data.groupby('customer_id').apply(lambda x: x.sort_values('date'))
 
-for cust, data in grouped.groupby('customer_id'):
-    # find the index of the last row where total_deposit > 0
-    last_deposit_idx = data[data['total_deposit'] > 0].index[-1]
+# for cust, data in grouped.groupby('customer_id'):
+#     # find the index of the last row where total_deposit > 0
+#     last_deposit_idx = data[data['total_deposit'] > 0].index[-1]
     
-    # iterate through each row for that customer, starting from the first row,
-    # and calculate the number of days since the last deposit
-    days_since_last_deposit = 0
-    for idx, row in data.iterrows():
-        if idx > last_deposit_idx:
-            break
-        if row['total_deposit'] > 0:
-            last_deposit_idx = idx
-            days_since_last_deposit = 0
-        else:
-            days_since_last_deposit += (row['date'] - data.loc[last_deposit_idx, 'date']).days
+#     # iterate through each row for that customer, starting from the first row,
+#     # and calculate the number of days since the last deposit
+#     days_since_last_deposit = 0
+#     for idx, row in data.iterrows():
+#         if idx > last_deposit_idx:
+#             break
+#         if row['total_deposit'] > 0:
+#             last_deposit_idx = idx
+#             days_since_last_deposit = 0
+#         else:
+#             days_since_last_deposit += (row['date'] - data.loc[last_deposit_idx, 'date']).days
         
-        # store the calculated value in the 'days_since_last_deposit' column
-        customer_month_data.at[idx, 'days_since_last_deposit'] = days_since_last_deposit
+#         # store the calculated value in the 'days_since_last_deposit' column
+#         customer_month_data.at[idx, 'days_since_last_deposit'] = days_since_last_deposit
 
 # %% --------------------------------------------------------------------------
 # Add features that include prior month data
 # -----------------------------------------------------------------------------
-# add
-window_size = 3
+# # add
+# window_size = 3
 
-# calculate the 3 month rolling total amount
-customer_month_data['rolling_total_amount']=(customer_month_data.groupby('customer_id')['total_amount'].rolling(window_size, min_periods=1).sum()).reset_index()['total_amount'].fillna(0)
+# # calculate the 3 month rolling total amount
+# customer_month_data['rolling_total_amount']=(customer_month_data.groupby('customer_id')['total_amount'].rolling(window_size, min_periods=1).sum()).reset_index()['total_amount'].fillna(0)
 
-# calculate the balance variance
-customer_month_data['balance_variance'] = customer_month_data.groupby('customer_id')['current_balance'].rolling(window_size).var()
+# # calculate the balance variance
+# customer_month_data['balance_variance'] = customer_month_data.groupby('customer_id')['current_balance'].rolling(window_size).var()
 
-# customer 
-customer_month_data['consecutive_deficits'] = customer_month_data.groupby('customer_id')['total_amount'].apply(lambda x: x.rolling(min_periods=1, window=len(x)).apply(lambda y: sum(y < 0) if sum(y < 0) == len(y) else 0, raw=True))
+# # customer 
+# customer_month_data['consecutive_deficits'] = customer_month_data.groupby('customer_id')['total_amount'].apply(lambda x: x.rolling(min_periods=1, window=len(x)).apply(lambda y: sum(y < 0) if sum(y < 0) == len(y) else 0, raw=True))
 
 # %% --------------------------------------------------------------------------
 # Add the churn values
@@ -283,14 +283,143 @@ customer_month_data['churned'] = customer_month_data.groupby('customer_id')['dat
 # Keep rows with transaction_date before March 2020
 customer_month_data = customer_month_data[customer_month_data['date'] < '2020-03-01']
 
+
+#%%
+#CHURN LOGIC HERE 
+
+
+
+customer_month_data_churn_logic = customer_month_data
+
+customer_month_data_churn_logic.drop(columns=['counts'], inplace=True)
+
+
+# %% --------------------------------------------------------------------------
+
+groups = customer_month_data_churn_logic.groupby('customer_id')
+
+# iterate over groups and count consecutive zero rows
+counts = []
+for _, group in groups:
+    zero_count = 0
+    for i in range(len(group)-1, -1, -1):
+        if group.iloc[i]['total_amount'] == 0:
+            zero_count += 1
+        else:
+            break
+    counts.append(zero_count)
+
+
+# %% --------------------------------------------------------------------------
+df_counts = pd.DataFrame(columns = ['customer_id', 'counts'])
+
+    
+df_counts['customer_id'] = customer_month_data['customer_id'].unique().astype(int)
+df_counts['counts'] = counts
+
+# %% ---------------------------------------
+
+customer_month_data_churn_logic = customer_month_data_churn_logic.merge(df_counts, how = 'left', on='customer_id')
+
+
+
+# customer_month_data_churn_logic['counts'].fillna(0, inplace=True)
+
+
+
+# %% --------------------------------------------------------------------------
+def create_churned_column(customer_month_data_churn_logic):
+    
+    # First, sort the dataframe by customer_id and date to make sure rows are in the correct order
+    customer_month_data_churn_logic.sort_values(by=['customer_id', 'date'], inplace=True)
+    
+    # Create an empty 'churned' column in the dataframe
+    customer_month_data_churn_logic['churned'] = 0
+    
+    # Group the dataframe by customer_id and loop through each group
+    for _, group in customer_month_data_churn_logic.groupby('customer_id'):
+        # Check if the current balance is less than 500 for the last row of the group
+        if group.iloc[-1]['current_balance'] < 500:
+            # Set the 'churned' column to 1 for the last row of the group and 0 for all other rows
+            customer_month_data_churn_logic.loc[group.index[-1], 'churned'] = 1
+        else:
+            # Get the index of the row where counts is non-zero
+            if len(group) > group['counts'].values[0]:
+                customer_month_data_churn_logic.loc[group.index[-((group['counts'].values[0])+1)], 'churned'] = 1
+            else:
+                customer_month_data_churn_logic.loc[group.index[-1], 'churned'] = 1
+                
+    return customer_month_data_churn_logic
+
+
+create_churned_column(customer_month_data_churn_logic)
+
+# %% -
+# Find the first occurrence of churned for each customer_id
+first_churned = customer_month_data_churn_logic.groupby('customer_id')['churned'].idxmax()
+
+# Filter the original DataFrame to keep only the rows up to the first occurrence of churned for each customer_id
+new_df = customer_month_data_churn_logic.loc[customer_month_data_churn_logic.index.isin(first_churned)]
+
+# The new DataFrame contains only the rows you need
+
+
+# The new DataFrame contains only the rows you need
+
+
+# %% --------------------------------------------------------------------------
+import matplotlib.pyplot as plt
+
+# Create a histogram
+plt.hist(counts)
+
+# Add labels and title
+plt.xlabel('Counts')
+plt.ylabel('Frequency')
+plt.title('Histogram of Counts')
+
+# Display the plot
+plt.show()
+
+
+# %% -------------------------------------------------------------------------
+last_rows = customer_month_data_churn_logic.groupby('customer_id').last()
+plt.hist(last_rows['current_balance'], bins=256)
+# Add labels and title
+plt.xlabel('Balance')
+plt.ylabel('Frequency')
+plt.title('Histogram of Balance')
+
+# Display the plot
+plt.show()
+
+
+
+
+
+
+
 # %% --------------------------------------------------------------------------
 # Clean the final dataset 
 # -----------------------------------------------------------------------------
+
+
+
+
+
+
 
 # remove the columns we do not need for the ML model
 # we remove here so we don't mess with the previous dataset incase we want to make changes
 final_customer_month_data = customer_month_data.dropna()
 final_customer_month_data = customer_month_data.drop(columns = ['dob','state','creation_date', 'date', 'customer_id'])
+
+
+
+
+
+
+
 
 # %% --------------------------------------------------------------------------
 # Split the dataset
