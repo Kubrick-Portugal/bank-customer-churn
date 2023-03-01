@@ -200,12 +200,14 @@ monthly_transactions['unemployment_rate'] = monthly_transactions['month_year'].m
 monthly_transactions['consumer_sent'] = monthly_transactions['month_year'].map(consumer_sent['consumer_sent'])
 # Drop the month_year column as it is no longer needed
 monthly_transactions.drop('month_year', axis=1, inplace=True)
+
 # %% --------------------------------------------------------------------------
 # Add extra features to customer-month data
 # -----------------------------------------------------------------------------
 
+new_df = df[["customer_id", "dob", "state", "region", "start_balance", "creation_date"]]
 # Merge with customer data
-customer_month_data = pd.merge(df, monthly_transactions, on='customer_id')
+customer_month_data = pd.merge(new_df, monthly_transactions, on='customer_id')
 
 # Calculate age of account
 customer_month_data['duration_open'] = (pd.to_datetime(customer_month_data["date"]) - pd.to_datetime(customer_month_data['creation_date'])).dt.days
