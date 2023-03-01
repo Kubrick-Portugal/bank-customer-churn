@@ -194,7 +194,7 @@ monthly_transactions['month_year'] = pd.to_datetime(monthly_transactions['month_
 
 # Map new dfs to df based on the month_year column
 monthly_transactions['interest_rate'] = monthly_transactions['month_year'].map(interest_rates['interest_rate'])
-# df['gdp'] = df['month_year'].map(gdp['gdp'])
+monthly_transactions['gdp'] = monthly_transactions['month_year'].map(gdp['gdp'].resample('M').ffill())
 monthly_transactions['inflation_expectation'] = monthly_transactions['month_year'].map(inflation['inflation_expectation'])
 monthly_transactions['unemployment_rate'] = monthly_transactions['month_year'].map(unemployment['unemployment_rate'])
 monthly_transactions['consumer_sent'] = monthly_transactions['month_year'].map(consumer_sent['consumer_sent'])
@@ -228,34 +228,17 @@ customer_means = customer_month_data.groupby('customer_id')['total_withdrawal'].
 customer_stds = customer_month_data.groupby('customer_id')['total_withdrawal'].std()
 customer_month_data['normalized_significant_withdrawals'] = customer_month_data.apply(lambda x: (x['total_withdrawal'] - customer_means[x['customer_id']]) / customer_stds[x['customer_id']], axis=1)
 
-
 # %% --------------------------------------------------------------------------
-# 
+# Clean the monthly transaction data
 # -----------------------------------------------------------------------------
-# create a new column with NaN values to store the number of days since last deposit
-customer_month_data['days_since_last_deposit'] = np.nan
+# remove customers with less than 3 months
 
-# group the data by customer and sort by date
-grouped = customer_month_data.groupby('customer_id').apply(lambda x: x.sort_values('date'))
+# Group the customer_month_data by customer_id and count the number of unique months
+customer_data_counts = customer_month_data.groupby('customer_id')['date'].nunique()
 
-for cust, data in grouped.groupby('customer_id'):
-    # find the index of the last row where total_deposit > 0
-    last_deposit_idx = data[data['total_deposit'] > 0].index[-1]
-    
-    # iterate through each row for that customer, starting from the first row,
-    # and calculate the number of days since the last deposit
-    days_since_last_deposit = 0
-    for idx, row in data.iterrows():
-        if idx > last_deposit_idx:
-            break
-        if row['total_deposit'] > 0:
-            last_deposit_idx = idx
-            days_since_last_deposit = 0
-        else:
-            days_since_last_deposit += (row['date'] - data.loc[last_deposit_idx, 'date']).days
-        
-        # store the calculated value in the 'days_since_last_deposit' column
-        customer_month_data.at[idx, 'days_since_last_deposit'] = days_since_last_deposit
+# Filter out the customers with less than 3 unique months of data
+mask = customer_data_counts >= 3
+customer_month_data = customer_month_data[customer_month_data['customer_id'].isin(customer_data_counts[mask].index)]
 
 # %% --------------------------------------------------------------------------
 # Add features that include prior month data
@@ -267,7 +250,7 @@ window_size = 3
 customer_month_data['rolling_total_amount']=(customer_month_data.groupby('customer_id')['total_amount'].rolling(window_size, min_periods=1).sum()).reset_index()['total_amount'].fillna(0)
 
 # calculate the balance variance
-customer_month_data['balance_variance'] = customer_month_data.groupby('customer_id')['current_balance'].rolling(window_size).var()
+customer_month_data['balance_variance'] = customer_month_data.groupby('customer_id')['current_balance'].rolling(window_size).var().reset_index(level=0, drop=True).fillna(0)
 
 # customer 
 customer_month_data['consecutive_deficits'] = customer_month_data.groupby('customer_id')['total_amount'].apply(lambda x: x.rolling(min_periods=1, window=len(x)).apply(lambda y: sum(y < 0) if sum(y < 0) == len(y) else 0, raw=True))
@@ -282,6 +265,11 @@ customer_month_data['churned'] = customer_month_data.groupby('customer_id')['dat
 # remove all the rows with the dates less than march 2020 (since we use three months) 
 # Keep rows with transaction_date before March 2020
 customer_month_data = customer_month_data[customer_month_data['date'] < '2020-03-01']
+
+# %% --------------------------------------------------------------------------
+# save the dataset to csv file
+# -----------------------------------------------------------------------------
+customer_month_data.to_csv(r'data/cleaned_data.csv', index=False)
 
 # %% --------------------------------------------------------------------------
 # Clean the final dataset 
@@ -318,4 +306,13 @@ model.fit(X_train, y_train)
 # showcase the data
 # -----------------------------------------------------------------------------
 y_pred = model.predict(X_test)
-classification_report(y_test, y_pred)
+print(classification_report(y_test, y_pred))
+
+# %% --------------------------------------------------------------------------
+# XGBoost
+# -----------------------------------------------------------------------------
+from xgboost import XGBClassifier
+
+model = XGBClassifier()
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
