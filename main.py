@@ -16,8 +16,8 @@ import matplotlib.pyplot as plt
 # -----------------------------------------------------------------------------
 
 # load data
-customers = pd.read_csv(r'data/customers_tm1_e.csv')
-transactions = pd.read_csv(r'data/transactions_tm1_e.csv')
+customers = pd.read_csv('./data/customers_tm1_e.csv')
+transactions = pd.read_csv('./data/transactions_tm1_e.csv')
 
 transactions.head()
 
@@ -244,37 +244,32 @@ customer_month_data = customer_month_data[customer_month_data['customer_id'].isi
 # Add features that include prior month data
 # -----------------------------------------------------------------------------
 # # add
-# window_size = 3
+window_size = 3
 
 # # calculate the 3 month rolling total amount
-# customer_month_data['rolling_total_amount']=(customer_month_data.groupby('customer_id')['total_amount'].rolling(window_size, min_periods=1).sum()).reset_index()['total_amount'].fillna(0)
+customer_month_data['rolling_total_amount']=(customer_month_data.groupby('customer_id')['total_amount'].rolling(window_size, min_periods=1).sum()).reset_index()['total_amount'].fillna(0)
 
 # calculate the balance variance
 customer_month_data['balance_variance'] = customer_month_data.groupby('customer_id')['current_balance'].rolling(window_size).var().reset_index(level=0, drop=True).fillna(0)
 
 # # customer 
-# customer_month_data['consecutive_deficits'] = customer_month_data.groupby('customer_id')['total_amount'].apply(lambda x: x.rolling(min_periods=1, window=len(x)).apply(lambda y: sum(y < 0) if sum(y < 0) == len(y) else 0, raw=True))
+customer_month_data['consecutive_deficits'] = customer_month_data.groupby('customer_id')['total_amount'].apply(lambda x: x.rolling(min_periods=1, window=len(x)).apply(lambda y: sum(y < 0) if sum(y < 0) == len(y) else 0, raw=True))
 
 # %% --------------------------------------------------------------------------
 # Add the churn values
 # -----------------------------------------------------------------------------
 
-# get the churned column
-customer_month_data['churned'] = customer_month_data.groupby('customer_id')['date'].transform('last').eq(customer_month_data['date']).astype(int)
+# # get the churned column
+# customer_month_data['churned'] = customer_month_data.groupby('customer_id')['date'].transform('last').eq(customer_month_data['date']).astype(int)
 
-# remove all the rows with the dates less than march 2020 (since we use three months) 
-# Keep rows with transaction_date before March 2020
-customer_month_data = customer_month_data[customer_month_data['date'] < '2020-03-01']
+# # remove all the rows with the dates less than march 2020 (since we use three months) 
+# # Keep rows with transaction_date before March 2020
+# customer_month_data = customer_month_data[customer_month_data['date'] < '2020-03-01']
 
 
 #%%
 #CHURN LOGIC HERE 
-
-
-
 customer_month_data_churn_logic = customer_month_data
-
-customer_month_data_churn_logic.drop(columns=['counts'], inplace=True)
 
 
 # %% --------------------------------------------------------------------------
@@ -306,10 +301,6 @@ customer_month_data_churn_logic = customer_month_data_churn_logic.merge(df_count
 
 
 
-# customer_month_data_churn_logic['counts'].fillna(0, inplace=True)
-
-
-
 # %% --------------------------------------------------------------------------
 def create_churned_column(customer_month_data_churn_logic):
     
@@ -338,17 +329,33 @@ def create_churned_column(customer_month_data_churn_logic):
 create_churned_column(customer_month_data_churn_logic)
 
 # %% -
-# Find the first occurrence of churned for each customer_id
-first_churned = customer_month_data_churn_logic.groupby('customer_id')['churned'].idxmax()
 
-# Filter the original DataFrame to keep only the rows up to the first occurrence of churned for each customer_id
-new_df = customer_month_data_churn_logic.loc[customer_month_data_churn_logic.index.isin(first_churned)]
+# Sort the dataframe by customer ID and by churn value in ascending order
+customer_month_data_churn_logic_cleaned = customer_month_data_churn_logic
 
-# The new DataFrame contains only the rows you need
+# Initialize a variable to keep track of the last churn index for each customer
+last_churn_indices = {}
 
+# Iterate through each row in the customer-month data
+for index, row in customer_month_data_churn_logic_cleaned.iterrows():
+    customer_id = row['customer_id']
+    churn = row['churned']
+    
+    # If the churn value is equal to 1, set the last churn index variable to the index of the current row
+    if churn == 1:
+        last_churn_indices[customer_id] = index
+    
+    # If the churn value is not equal to 1, check if the index of the current row is greater than the last churn index variable for the same customer
+    elif customer_id in last_churn_indices and index > last_churn_indices[customer_id]:
+        # Set the churn value of the current row to NaN
+        customer_month_data_churn_logic_cleaned.loc[index, 'churned'] = pd.np.nan
+    
+    # If the index of the current row is less than or equal to the last churn index variable for the same customer, do nothing
+    else:
+        pass
 
-# The new DataFrame contains only the rows you need
-
+# Drop all rows with NaN churn value
+customer_month_data_churn_logic_cleaned.dropna(subset=['churned'], inplace=True)
 
 # %% --------------------------------------------------------------------------
 import matplotlib.pyplot as plt
