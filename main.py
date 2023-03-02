@@ -255,6 +255,7 @@ customer_month_data['balance_variance'] = customer_month_data.groupby('customer_
 # # customer 
 customer_month_data['consecutive_deficits'] = customer_month_data.groupby('customer_id')['total_amount'].apply(lambda x: x.rolling(min_periods=1, window=len(x)).apply(lambda y: sum(y < 0) if sum(y < 0) == len(y) else 0, raw=True))
 
+
 # %% --------------------------------------------------------------------------
 # Add the churn values
 # -----------------------------------------------------------------------------
@@ -313,7 +314,7 @@ def create_churned_column(customer_month_data_churn_logic):
     # Group the dataframe by customer_id and loop through each group
     for _, group in customer_month_data_churn_logic.groupby('customer_id'):
         # Check if the current balance is less than 500 for the last row of the group
-        if group.iloc[-1]['current_balance'] < 500:
+        if group.iloc[-1]['current_balance'] < 100:
             # Set the 'churned' column to 1 for the last row of the group and 0 for all other rows
             customer_month_data_churn_logic.loc[group.index[-1], 'churned'] = 1
         else:
@@ -357,35 +358,49 @@ for index, row in customer_month_data_churn_logic_cleaned.iterrows():
 # Drop all rows with NaN churn value
 customer_month_data_churn_logic_cleaned.dropna(subset=['churned'], inplace=True)
 
+# %% ------------------------------------------------------------------
+model_input = customer_month_data_churn_logic_cleaned[customer_month_data_churn_logic_cleaned['balance_ratio'].notna()]
+model_input['normalized_significant_withdrawals'].fillna(0, inplace=True)
+
+columns_to_keep = ['start_balance',
+        'total_deposit',
+       'num_deposits', 'total_withdrawal', 'num_withdrawals', 
+       'interest_rate', 'inflation_expectation', 'unemployment_rate',
+       'consumer_sent', 'duration_open', 
+       'current_balance', 'balance_ratio',
+       'normalized_significant_withdrawals',
+       'balance_variance', 'consecutive_deficits']
+
+
+
+X = model_input[columns_to_keep]
+y = model_input['churned']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, stratify = y, random_state=42)
+
+
+
+
 # %% --------------------------------------------------------------------------
-import matplotlib.pyplot as plt
-
-# Create a histogram
-plt.hist(counts)
-
-# Add labels and title
-plt.xlabel('Counts')
-plt.ylabel('Frequency')
-plt.title('Histogram of Counts')
-
-# Display the plot
-plt.show()
-
-
-# %% -------------------------------------------------------------------------
-last_rows = customer_month_data_churn_logic.groupby('customer_id').last()
-plt.hist(last_rows['current_balance'], bins=256)
-# Add labels and title
-plt.xlabel('Balance')
-plt.ylabel('Frequency')
-plt.title('Histogram of Balance')
-
-# Display the plot
-plt.show()
 
 
 
+from xgboost import XGBClassifier
 
+model = XGBClassifier()
+model.fit(X_train, y_train)
+y_pred2 = model.predict(X_test)
+
+classification_report(y_test, y_pred2)
+
+
+# %% --------------------------------------------------------------------------
+
+from sklearn.ensemble import RandomForestClassifier
+model3 = RandomForestClassifier()
+model3.fit(X_train, y_train)
+y_pred3 = model.predict(X_test)
+print(classification_report(y_test, y_pred3))
 
 
 
