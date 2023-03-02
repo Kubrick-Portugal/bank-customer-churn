@@ -111,10 +111,58 @@ df = df.merge(new_df.groupby('customer_id')['withdrawal_with_nas'].agg('count'),
 df.rename(columns={'deposit_with_nas':'num_deposits','withdrawal_with_nas':'num_withdrawals'}, inplace=True)
 
 # regions
-state_groups = {'Northeast': ['New York', 'Pennsylvania', 'New Jersey', 'Connecticut', 'Massachusetts', 'Rhode Island', 'Maine', 'Vermont', 'New Hampshire', 'Maryland'],
-                'Midwest': ['Illinois', 'Ohio', 'Michigan', 'Indiana', 'Wisconsin', 'Minnesota', 'Iowa', 'Missouri', 'North Dakota', 'South Dakota', 'Nebraska', 'Kansas'],
-                'South': ['Texas', 'Florida', 'North Carolina', 'Georgia', 'Virginia', 'Tennessee', 'South Carolina', 'Alabama', 'Louisiana', 'Kentucky', 'Oklahoma', 'Arkansas', 'West Virginia', 'Mississippi'],
-                'West': ['California', 'Washington', 'Arizona', 'Colorado', 'Oregon', 'Utah', 'Nevada', 'New Mexico', 'Idaho', 'Montana', 'Wyoming', 'Alaska', 'Hawaii', 'District of Columbia', 'Delaware']}
+state_groups = {'California': ['California'], 
+                'New York': ['New York'],
+                'Texas': ['Texas'], 
+                'Florida': ['Florida'], 
+                'Illinois':['Illinois'],
+                'Pennsylvania':['Pennsylvania'],
+                'Ohio':['Ohio'],
+                'Georgia':['Georgia'],
+                'North Carolina':['North Carolina'],
+                'Michigan':['Michigan'],
+                'New Jersey':['New Jersey'],
+                 'Virginia':['Virginia'],
+                'Washington':['Washington'],
+                'Arizona':['Arizona'],
+                'Massachusetts':['Massachusetts'],
+                'Tennessee':['Tennessee'],
+                'Indiana':['Indiana'],
+                'Missouri':['Missouri'],
+                'Other':[
+    'Alabama',
+    'Alaska',
+    'Arkansas',
+    'Colorado',
+    'Connecticut',
+    'Delaware',
+    'Hawaii',
+    'Idaho',
+    'Iowa',
+    'Kansas',
+    'Kentucky',
+    'Louisiana',
+    'Maine',
+    'Maryland',
+    'Minnesota',
+    'Mississippi',
+    'Montana',
+    'Nebraska',
+    'Nevada',
+    'New Hampshire',
+    'New Mexico',
+    'North Dakota',
+    'Oklahoma',
+    'Oregon',
+    'Rhode Island',
+    'South Carolina',
+    'South Dakota',
+    'Utah',
+    'Vermont',
+    'West Virginia',
+    'Wisconsin',
+    'Wyoming'
+]}
 state_to_region = {}
 for region, states in state_groups.items():
     for state in states:
@@ -122,6 +170,22 @@ for region, states in state_groups.items():
 
 # Apply the mapping to the 'state' column to create a new 'Region' column
 df["region"] = df['state'].apply(lambda x: state_to_region[x] if x in state_to_region else 'Other')
+
+age_groups = {
+    '0-17': list(range(0, 18)),
+    '18-25': list(range(18, 26)),
+    '26-40': list(range(26, 41)),
+    '41-64': list(range(41, 65)),
+    '65+': list(range(65, 101))
+}
+age_to_agegroups = {}
+for agegroups, age in age_groups.items():
+    for ages in age:
+        age_to_agegroups[ages] = agegroups
+
+# Apply the mapping to the 'age' column to create a new 'agegroups' column
+df["agegroups"] = df['age'].apply(lambda x: age_to_agegroups[x] if x in age_to_agegroups else None)
+
 
 # %% --------------------------------------------------------------------------
 # Addition of Macroeconomic Features 
@@ -159,6 +223,13 @@ df['consumer_sent'] = df['month_year'].map(consumer_sent['consumer_sent'])
 # Drop the month_year column as it is no longer needed
 df.drop('month_year', axis=1, inplace=True)
 
+
+# %% --------------------------------------------------------------------------
+# Show the analysis of the datafram
+# -----------------------------------------------------------------------------
+
+df.hist(figsize=(20,20))
+plt.show()
 
 # %% --------------------------------------------------------------------------
 # Adding monthly customer data
@@ -223,10 +294,10 @@ max_balance = customer_month_data.groupby('customer_id')['current_balance'].cumm
 # Calculate the balance ratio for each month
 customer_month_data['balance_ratio'] = customer_month_data['current_balance'] / max_balance
 
-# Add z-score of the withdrawals 
-customer_means = customer_month_data.groupby('customer_id')['total_withdrawal'].mean()
-customer_stds = customer_month_data.groupby('customer_id')['total_withdrawal'].std()
-customer_month_data['normalized_significant_withdrawals'] = customer_month_data.apply(lambda x: (x['total_withdrawal'] - customer_means[x['customer_id']]) / customer_stds[x['customer_id']], axis=1)
+# Add significant withdrawals
+customer_means = df.groupby('customer_id')['total_withdrawal'].mean()
+customer_stds = df.groupby('customer_id')['total_withdrawal'].std()
+df['significant_withdrawals'] = df.apply(lambda x: 1 if x['total_withdrawal'] < customer_means[x['customer_id']] - customer_stds[x['customer_id']] else 0, axis=1)
 
 # %% --------------------------------------------------------------------------
 # Clean the monthly transaction data
@@ -313,15 +384,10 @@ def create_churned_column(customer_month_data_churn_logic):
     # Group the dataframe by customer_id and loop through each group
     for _, group in customer_month_data_churn_logic.groupby('customer_id'):
         # Check if the current balance is less than 500 for the last row of the group
-        if group.iloc[-1]['current_balance'] < 500:
-            # Set the 'churned' column to 1 for the last row of the group and 0 for all other rows
-            customer_month_data_churn_logic.loc[group.index[-1], 'churned'] = 1
+        if len(group) > group['counts'].values[0]:
+            customer_month_data_churn_logic.loc[group.index[-((group['counts'].values[0])+1)], 'churned'] = 1
         else:
-            # Get the index of the row where counts is non-zero
-            if len(group) > group['counts'].values[0]:
-                customer_month_data_churn_logic.loc[group.index[-((group['counts'].values[0])+1)], 'churned'] = 1
-            else:
-                customer_month_data_churn_logic.loc[group.index[-1], 'churned'] = 1
+            customer_month_data_churn_logic.loc[group.index[-1], 'churned'] = 1
                 
     return customer_month_data_churn_logic
 
@@ -385,14 +451,11 @@ plt.show()
 
 
 
-
-
-
-
 # %% --------------------------------------------------------------------------
 # save the dataset to csv file
 # -----------------------------------------------------------------------------
-customer_month_data.to_csv(r'data/cleaned_data.csv', index=False)
+customer_month_data_churn_logic_cleaned.to_csv('./data/cleaneds_data.csv', index=False)
+
 
 # %% --------------------------------------------------------------------------
 # Clean the final dataset 
